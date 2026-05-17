@@ -3,32 +3,31 @@ name: Build and Deploy Project Mjengo to Firebase
 on:
   push:
     branches:
-      - main # Triggers the pipeline automatically when you push to main
+      - main
 
 jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
+    # Tells GitHub Actions that your React app lives inside the project-mjengo subfolder
+    defaults:
+      run:
+        working-directory: project-mjengo
 
     steps:
-      # 1. Pull the latest version of your code onto the GitHub runner
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # 2. Setup Node environment (NO CACHE LINE AT ALL)
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      # 3. Install project dependencies
       - name: Install Dependencies
         run: npm install
-        
-      # 4. Compile the production-ready build and inject your secure secrets
+
       - name: Build React Application
-        run: npm run build
+        run: CI=false npm run build
         env:
-          CI: false # Stops warning flags from treating warnings as compilation errors
           REACT_APP_FIREBASE_API_KEY: ${{ secrets.REACT_APP_FIREBASE_API_KEY }}
           REACT_APP_FIREBASE_AUTH_DOMAIN: "project-mjengo.firebaseapp.com"
           REACT_APP_FIREBASE_PROJECT_ID: "project-mjengo"
@@ -37,7 +36,6 @@ jobs:
           REACT_APP_FIREBASE_APP_ID: ${{ secrets.REACT_APP_FIREBASE_APP_ID }}
           REACT_APP_FIREBASE_MEASUREMENT_ID: "G-4PKCBDHN83"
 
-      # 5. Ship the optimized build directory straight to Firebase hosting
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
