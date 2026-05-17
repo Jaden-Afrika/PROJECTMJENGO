@@ -63,6 +63,46 @@ const ProjectSelectionPage = () => {
   return <ProjectSelection onSelectProject={(project) => navigate(`/dashboard/${project.id}`)} />;
 };
 
+const Footer = () => (
+  <footer className="bg-black border-t-4 border-orange-600 text-white">
+    <div className="max-w-5xl mx-auto px-4 md:px-8 py-8 grid grid-cols-1 md:grid-cols-3 gap-8">
+      <div>
+        <p className="text-xl font-black tracking-tight text-orange-500">ProjectMjengo</p>
+        <p className="mt-2 text-sm leading-relaxed text-gray-300">
+          Construction budgeting, material tracking, and site progress records in one simple ledger.
+        </p>
+      </div>
+
+      <div>
+        <h2 className="text-sm font-bold uppercase tracking-wider text-orange-500">Contact</h2>
+        <div className="mt-3 flex flex-col gap-2 text-sm font-semibold text-gray-100">
+          <a href="mailto:jadenopil@gmail.com" className="hover:text-orange-400 transition-colors">
+            jadenopil@gmail.com
+          </a>
+          <a href="tel:+254712496142" className="hover:text-orange-400 transition-colors">
+            0712496142
+          </a>
+        </div>
+      </div>
+
+      <div>
+        <h2 className="text-sm font-bold uppercase tracking-wider text-orange-500">Quick Links</h2>
+        <nav className="mt-3 flex flex-col gap-2 text-sm font-semibold text-gray-100" aria-label="Footer navigation">
+          <a href="/projects" className="hover:text-orange-400 transition-colors">Projects</a>
+          <a href="/dashboard" className="hover:text-orange-400 transition-colors">Dashboard</a>
+        </nav>
+      </div>
+    </div>
+
+    <div className="border-t border-white/10">
+      <div className="max-w-5xl mx-auto px-4 md:px-8 py-4 flex flex-col sm:flex-row justify-between gap-2 text-xs font-semibold text-gray-400">
+        <p>© {new Date().getFullYear()} ProjectMjengo. All rights reserved.</p>
+        <p className="text-orange-500">Built for clearer construction cost control.</p>
+      </div>
+    </div>
+  </footer>
+);
+
 
 // --- Protected Route Wrapper ---
 const ProtectedRoute = ({ children }) => {
@@ -79,32 +119,35 @@ function App() {
   return (
     <AuthProvider>
       <Router>
-        <div className="min-h-screen bg-white">
-          <Routes>
-            <Route path="/" element={<Login />} />
-            <Route 
-              path="/projects" 
-              element={
-                <ProtectedRoute>
-                  <ProjectSelectionPage />
-                </ProtectedRoute>
-              } 
-            />
-            <Route 
-              path="/dashboard" 
-              element={<Navigate to="/projects" />} 
-            />
-            <Route 
-              path="/dashboard/:projectId" 
-              element={
-                <ProtectedRoute>
-                  <Dashboard />
-                </ProtectedRoute>
-              } 
-            />
-            {/* Redirect any unknown routes to login */}
-            <Route path="*" element={<Navigate to="/" />} />
-          </Routes>
+        <div className="min-h-screen bg-white flex flex-col">
+          <main className="flex-1">
+            <Routes>
+              <Route path="/" element={<Login />} />
+              <Route 
+                path="/projects" 
+                element={
+                  <ProtectedRoute>
+                    <ProjectSelectionPage />
+                  </ProtectedRoute>
+                } 
+              />
+              <Route 
+                path="/dashboard" 
+                element={<Navigate to="/projects" />} 
+              />
+              <Route 
+                path="/dashboard/:projectId" 
+                element={
+                  <ProtectedRoute>
+                    <Dashboard />
+                  </ProtectedRoute>
+                } 
+              />
+              {/* Redirect any unknown routes to login */}
+              <Route path="*" element={<Navigate to="/" />} />
+            </Routes>
+          </main>
+          <Footer />
         </div>
       </Router>
     </AuthProvider>
