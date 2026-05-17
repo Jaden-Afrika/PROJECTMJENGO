@@ -8,26 +8,27 @@ on:
 jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
-    # Tells GitHub Actions that your React app lives inside the project-mjengo subfolder
-    defaults:
-      run:
-        working-directory: project-mjengo
 
     steps:
+      # 1. Pull the repository files down
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      # 2. Setup the exact Node engine
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      # 3. Install project dependencies including devDependencies like Tailwind
-      - name: Install Dependencies
-        run: npm install --include=dev
+      # 3. Clean install all modules including Tailwind dev dependencies
+      - name: Install All Dependencies
+        working-directory: ./project-mjengo
+        run: npm install --legacy-peer-deps --include=dev
 
+      # 4. Force compilation while completely ignoring breaking warnings
       - name: Build React Application
-        run: CI=false npm run build
+        working-directory: ./project-mjengo
+        run: npx cross-env CI=false npm run build
         env:
           REACT_APP_FIREBASE_API_KEY: ${{ secrets.REACT_APP_FIREBASE_API_KEY }}
           REACT_APP_FIREBASE_AUTH_DOMAIN: "project-mjengo.firebaseapp.com"
@@ -37,6 +38,7 @@ jobs:
           REACT_APP_FIREBASE_APP_ID: ${{ secrets.REACT_APP_FIREBASE_APP_ID }}
           REACT_APP_FIREBASE_MEASUREMENT_ID: "G-4PKCBDHN83"
 
+      # 5. Deploy the generated build folder cleanly to Firebase
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
@@ -44,3 +46,4 @@ jobs:
           firebaseServiceAccount: '${{ secrets.FIREBASE_TOKEN }}'
           projectId: project-mjengo
           channelId: live
+          entryPoint: ./project-mjengo
