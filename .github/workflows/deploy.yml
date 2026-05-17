@@ -22,8 +22,9 @@ jobs:
         with:
           node-version: '20'
 
+      # 3. Install project dependencies including devDependencies like Tailwind
       - name: Install Dependencies
-        run: npm install
+        run: npm install --include=dev
 
       - name: Build React Application
         run: CI=false npm run build
