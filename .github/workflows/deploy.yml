@@ -46,4 +46,4 @@ jobs:
           firebaseServiceAccount: '${{ secrets.FIREBASE_TOKEN }}'
           projectId: project-mjengo
           channelId: live
-          entryPoint: ./project-mjengo
+          entryPoint: .
