@@ -1,0 +1,18 @@
+:root {
+	--color-primary: #ff6600; /* orange */
+	--color-bg: #000000; /* black */
+	--color-text: #ffffff; /* white */
+	--color-muted: #222222;
+}
+
+html, body, #root {
+	height: 100%;
+	margin: 0;
+	background-color: var(--color-bg);
+	color: var(--color-text);
+	font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+}
+
+a {
+	color: var(--color-primary);
+}
