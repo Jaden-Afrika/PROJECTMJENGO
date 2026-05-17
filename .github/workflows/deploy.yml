@@ -14,17 +14,16 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # 2. Setup Node environment
+      # 2. Setup Node environment (NO CACHE LINE AT ALL)
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
 
-      # 3. Clean install all project dependencies
+      # 3. Install project dependencies
       - name: Install Dependencies
         run: npm install
-
+        
       # 4. Compile the production-ready build and inject your secure secrets
       - name: Build React Application
         run: npm run build
