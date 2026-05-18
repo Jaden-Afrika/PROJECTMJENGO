@@ -41,7 +41,7 @@ jest.mock('firebase/firestore', () => ({
 
 jest.mock('firebase/storage', () => ({
   ref: jest.fn((storage, path) => ({ storage, path })),
-  uploadBytes: (...args) => mockUploadBytes(...args),
+  uploadBytesResumable: (...args) => mockUploadBytes(...args),
   getDownloadURL: (...args) => mockGetDownloadURL(...args)
 }));
 
@@ -124,7 +124,26 @@ beforeEach(() => {
   mockAddDoc.mockResolvedValue({ id: 'created-doc' });
   mockSetDoc.mockResolvedValue();
   mockDeleteDoc.mockResolvedValue();
-  mockUploadBytes.mockResolvedValue();
+  mockUploadBytes.mockImplementation((photoRef, photoFile, metadata) => {
+    const task = {
+      snapshot: {
+        ref: photoRef,
+        bytesTransferred: photoFile.size,
+        totalBytes: photoFile.size
+      },
+      cancel: jest.fn(),
+      on: jest.fn((eventName, onProgress, onError, onComplete) => {
+        onProgress({
+          bytesTransferred: photoFile.size,
+          totalBytes: photoFile.size
+        });
+        onComplete();
+      })
+    };
+
+    task.metadata = metadata;
+    return task;
+  });
   mockGetDownloadURL.mockResolvedValue('https://example.com/uploaded.jpg');
 });
 
@@ -256,7 +275,7 @@ describe('Dashboard', () => {
 
     await waitFor(() => {
       expect(mockUploadBytes).toHaveBeenCalled();
-      expect(mockUploadBytes.mock.calls[0][2]).toEqual({
+      expect(mockUploadBytes.mock.results[0].value.metadata).toEqual({
         contentType: 'image/jpeg'
       });
       expect(mockAddDoc).toHaveBeenCalled();
@@ -284,6 +303,25 @@ describe('Dashboard', () => {
     fireEvent.click(screen.getByRole('button', { name: /Add Progress Photo/i }));
 
     expect(screen.getByText(/Please choose a valid image file/i)).toBeInTheDocument();
+    expect(mockUploadBytes).not.toHaveBeenCalled();
+    expect(mockAddDoc).not.toHaveBeenCalled();
+  });
+
+  test('rejects oversized progress photo uploads', async () => {
+    const { container } = render(<Dashboard />);
+
+    expect(await screen.findByText(/Kilimani Build/i)).toBeInTheDocument();
+
+    const file = new File(['image-data'], 'large-site-photo.jpg', { type: 'image/jpeg' });
+    Object.defineProperty(file, 'size', { value: 11 * 1024 * 1024 });
+
+    fireEvent.change(container.querySelector('input[type="file"]'), {
+      target: { files: [file] }
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Add Progress Photo/i }));
+
+    expect(screen.getByText(/Please choose an image under 10 MB/i)).toBeInTheDocument();
     expect(mockUploadBytes).not.toHaveBeenCalled();
     expect(mockAddDoc).not.toHaveBeenCalled();
   });

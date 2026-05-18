@@ -21,9 +21,10 @@ const Login = () => {
 
       {/* Login Card Container */}
       <div className="bg-white/95 p-8 rounded-3xl shadow-2xl max-w-md w-full mx-4 text-center relative z-10 border border-white/20">
-        <div className="">
-          <div
-           img src="/PROJECTMJENGO.png" alt="Logo"/>
+        <div className="flex justify-center">
+          <img src="/PROJECTMJENGO.png" alt="Project Mjengo logo" className="mb-4 h-12 w-auto" />
+        </div>
+        <div className="flex justify-center">
           {/* Simple clean construction grid icon using plain CSS shapes */}
           <div className="grid grid-cols-2 gap-1 w-6 h-6">
             <div className="border-2 border-orange-600 rounded-sm"></div>

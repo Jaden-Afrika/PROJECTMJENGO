@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import { db, storage } from './firebase';
 import { collection, addDoc, onSnapshot, query, where, doc, getDoc, deleteDoc, setDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 
 const defaultMarketPrices = [
   { id: 'default-cement', materialName: 'Cement', unit: '50kg bag', averagePrice: 750, source: 'Starter benchmark', isDefault: true },
@@ -31,6 +31,10 @@ const mergeMarketPrices = (savedPrices) => {
 };
 
 const getPhotoUploadError = (error) => {
+  if (error?.message === 'Upload timed out') {
+    return 'The upload timed out. Please check your connection and try again.';
+  }
+
   if (error?.code === 'storage/unauthorized') {
     return 'You do not have permission to upload images for this project.';
   }
@@ -46,6 +50,43 @@ const getPhotoUploadError = (error) => {
   return 'Could not upload the image. Please try again.';
 };
 
+const uploadPhotoFile = (photoRef, photoFile, onProgress) => new Promise((resolve, reject) => {
+  let settled = false;
+  const uploadTask = uploadBytesResumable(photoRef, photoFile, {
+    contentType: photoFile.type
+  });
+
+  const timeoutId = setTimeout(() => {
+    if (settled) return;
+    settled = true;
+    uploadTask.cancel();
+    reject(new Error('Upload timed out'));
+  }, 120000);
+
+  uploadTask.on(
+    'state_changed',
+    (snapshot) => {
+      const progress = snapshot.totalBytes
+        ? Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100)
+        : 0;
+      onProgress(progress);
+    },
+    (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      reject(error);
+    },
+    () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      onProgress(100);
+      resolve(uploadTask.snapshot);
+    }
+  );
+});
+
 const Dashboard = () => {
   const { user, logout } = useAuth();
   const { projectId } = useParams();
@@ -59,6 +100,7 @@ const Dashboard = () => {
   const [photoFile, setPhotoFile] = useState(null);
   const [photoCaption, setPhotoCaption] = useState('');
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [photoUploadProgress, setPhotoUploadProgress] = useState(null);
   const [photoError, setPhotoError] = useState('');
   const [marketMaterialName, setMarketMaterialName] = useState('');
   const [marketUnit, setMarketUnit] = useState('');
@@ -201,17 +243,21 @@ const Dashboard = () => {
       return;
     }
 
+    if (photoFile.size > 10 * 1024 * 1024) {
+      setPhotoError('Please choose an image under 10 MB.');
+      return;
+    }
+
     setUploadingPhoto(true);
+    setPhotoUploadProgress(0);
 
     try {
       const safeFileName = photoFile.name.replace(/[^a-zA-Z0-9.-]/g, '_');
       const photoPath = `progress_photos/${projectId}/${Date.now()}-${safeFileName}`;
       const photoRef = ref(storage, photoPath);
 
-      await uploadBytes(photoRef, photoFile, {
-        contentType: photoFile.type
-      });
-      const imageUrl = await getDownloadURL(photoRef);
+      const uploadSnapshot = await uploadPhotoFile(photoRef, photoFile, setPhotoUploadProgress);
+      const imageUrl = await getDownloadURL(uploadSnapshot.ref);
 
       await addDoc(collection(db, 'mjengo_progress_photos'), {
         userId: user.uid,
@@ -232,6 +278,7 @@ const Dashboard = () => {
       setPhotoError(getPhotoUploadError(error));
     } finally {
       setUploadingPhoto(false);
+      setPhotoUploadProgress(null);
     }
   };
 
@@ -304,11 +351,11 @@ const Dashboard = () => {
 
   if (projectError) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-white border border-gray-200 rounded-lg shadow-sm p-6 text-center">
-          <h1 className="text-2xl font-black text-black">Project Unavailable</h1>
-          <p className="text-gray-600 font-medium mt-2">{projectError}</p>
-          <Link to="/projects" className="inline-block mt-6 bg-orange-600 hover:bg-orange-700 text-white font-bold px-5 py-3 rounded-lg">
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4 text-white">
+        <div className="max-w-md w-full bg-zinc-900/30 border border-zinc-800 rounded-md p-6 text-center">
+          <h1 className="text-2xl font-bold tracking-tight text-white">Project Unavailable</h1>
+          <p className="text-zinc-400 font-medium mt-2">{projectError}</p>
+          <Link to="/projects" className="inline-block mt-6 bg-orange-600 hover:bg-orange-500 text-black font-bold px-5 py-2.5 rounded-md transition-colors">
             Back to Projects
           </Link>
         </div>
@@ -317,335 +364,328 @@ const Dashboard = () => {
   }
 
   return (
-  <div 
-    className="min-h-screen bg-cover bg-center bg-no-repeat relative p-4 md:p-8"
-    style={{ 
-      backgroundImage: `url('/dashbg.jpg')` 
-    }}
-  >
-    {/* Clean, light overlay so the white cards and text pop perfectly */}
-    <div className="absolute inset-0 bg-white/25 backdrop-blur-[1px] z-0"></div>
-{/* Content Wrapper */}
-    <div className="max-w-5xl mx-auto relative z-10">
-      
-      {/* Header Block */}
-      <header className="flex flex-col md:flex-row justify-between items-start md:items-center border-b pb-6 mb-8 gap-4 border-slate-300">
-        <div>
-          <h1 className="text-3xl font-black tracking-tight text-black">{project?.name || 'Project Ledger'}</h1>
-          <p className="text-black font-semibold mt-1">
-            {project?.location || 'Loading project'}{project?.type ? ` • ${project.type}` : ''}
-          </p>
-        </div>
-        
-        <div className="flex items-center gap-4 bg-white p-2 rounded-xl shadow-sm border">
-          <Link to="/projects" className="bg-black hover:bg-orange-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-all">
-            Projects
-          </Link>
-          <span className="text-sm font-semibold text-slate-600 px-2">Site Manager: {user?.displayName}</span>
-          <button onClick={logout} className="bg-red-50 hover:bg-red-100 text-red-600 px-4 py-2 rounded-lg text-sm font-bold transition-all">
-            Log Out
-          </button>
-        </div>
-      </header>
-
-        {/* Metrics Grid */}
-        <section className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200 shadow-sm">
-            <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wider">Total Project Budget</h3>
-            <p className="text-2xl font-black mt-1 text-black">KES {projectBudget.toLocaleString()}</p>
+    <div className="min-h-screen bg-zinc-950 text-white">
+      <div className="mx-auto w-full max-w-7xl px-4 py-5 md:px-8 md:py-8">
+        <header className="flex flex-col gap-5 border-b border-zinc-800 pb-5 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-white">{project?.name || 'Project Ledger'}</h1>
+            <p className="mt-1 text-sm font-medium text-zinc-500">
+              {project?.location || 'Loading project'}{project?.type ? ` / ${project.type}` : ''}
+            </p>
           </div>
-          <div className="bg-orange-50 p-6 rounded-2xl border border-orange-200 shadow-sm">
-            <h3 className="text-sm font-bold text-orange-600 uppercase tracking-wider">Total Funds Spent</h3>
-            <p className="text-3xl font-black mt-1 text-orange-700">KES {totalSpent.toLocaleString()}</p>
+
+          <div className="flex flex-wrap items-center gap-4">
+            <Link to="/projects" className="text-sm font-semibold text-zinc-400 transition-opacity hover:opacity-70">
+              Projects
+            </Link>
+            <span className="text-sm font-medium text-zinc-500">Site Manager: {user?.displayName}</span>
+            <button
+              onClick={logout}
+              className="rounded-md border border-zinc-800 px-3 py-1.5 text-sm font-semibold text-zinc-400 transition-colors hover:border-zinc-700 hover:text-white"
+            >
+              Log Out
+            </button>
           </div>
-          <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200 shadow-sm">
-            <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wider">Remaining Balance</h3>
-            <p className="text-2xl font-black mt-1 text-orange-600">KES {(projectBudget - totalSpent).toLocaleString()}</p>
-          </div>
-        </section>
+        </header>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Input Form Column */}
-          <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200 shadow-sm h-fit">
-            <h2 className="text-lg font-bold mb-4 text-black border-b border-gray-200 pb-2">Log New Entry</h2>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-black mb-1">Entry Type</label>
-                <select 
-                  value={logType} 
-                  onChange={(e) => setLogType(e.target.value)}
-                  className="w-full bg-white border border-gray-300 rounded-xl p-3 font-medium text-black focus:outline-none focus:ring-2 focus:ring-orange-600"
-                >
-                  <option value="material">Material (Cement, Sand, Stones)</option>
-                  <option value="labor">Labor / Fundi Wages</option>
-                  <option value="other">Other Expense</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-black mb-1">
-                  {logType === 'material' ? 'Item Name / Description' : logType === 'labor' ? 'Fundi / Contractor Name' : 'Expense Description'}
-                </label>
-                <input 
-                  type="text" 
-                  placeholder={logType === 'material' ? 'e.g., Bags of Bamburi Cement' : logType === 'labor' ? 'e.g., John (Mason)' : 'e.g., Permit fee or transport'}
-                  value={itemName} 
-                  onChange={(e) => setItemName(e.target.value)}
-                  list={logType === 'material' ? 'market-materials' : undefined}
-                  className="w-full bg-white border border-gray-300 rounded-xl p-3 text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-600"
-                />
-                {logType === 'material' && (
-                  <datalist id="market-materials">
-                    {marketPrices.map((item) => (
-                      <option key={item.id} value={item.materialName} />
-                    ))}
-                  </datalist>
-                )}
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-6 py-6 lg:grid-cols-3">
+          <aside className="space-y-6 lg:col-span-1">
+            <section className="border border-zinc-800 bg-zinc-900/30 p-5">
+              <h2 className="border-b border-zinc-800 pb-3 text-lg font-bold tracking-tight text-white">Log New Entry</h2>
+              <form onSubmit={handleSubmit} className="mt-5 space-y-4">
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-black mb-1">
-                    {logType === 'material' ? 'Quantity' : logType === 'labor' ? 'Days Worked' : 'Units'}
-                  </label>
-                  <input 
-                    type="number" 
-                    placeholder="0"
-                    value={quantity} 
-                    onChange={(e) => setQuantity(e.target.value)}
-                    className="w-full bg-white border border-gray-300 rounded-xl p-3 text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-600"
-                  />
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-zinc-400">Entry Type</label>
+                  <select
+                    value={logType}
+                    onChange={(e) => setLogType(e.target.value)}
+                    className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2.5 text-sm font-medium text-white transition-colors focus:border-orange-500 focus:outline-none"
+                  >
+                    <option value="material">Material (Cement, Sand, Stones)</option>
+                    <option value="labor">Labor / Fundi Wages</option>
+                    <option value="other">Other Expense</option>
+                  </select>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-black mb-1">
-                    {logType === 'material' ? 'Unit Price (KES)' : logType === 'labor' ? 'Daily Rate (KES)' : 'Amount per Unit (KES)'}
-                  </label>
-                  <input 
-                    type="number" 
-                    placeholder="0"
-                    value={price} 
-                    onChange={(e) => setPrice(e.target.value)}
-                    className="w-full bg-white border border-gray-300 rounded-xl p-3 text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-600"
-                  />
-                </div>
-              </div>
 
-              {logType === 'material' && selectedMarketPrice && (
-                <div className="bg-white border border-orange-200 rounded-xl p-3">
-                  <p className="text-xs font-bold uppercase tracking-wider text-orange-700">Market Average</p>
-                  <p className="text-sm font-semibold text-black mt-1">
-                    KES {Number(selectedMarketPrice.averagePrice || 0).toLocaleString()} per {selectedMarketPrice.unit}
-                  </p>
-                  {price && (
-                    <p className={`text-xs font-bold mt-1 ${priceDifference > 0 ? 'text-red-600' : priceDifference < 0 ? 'text-green-700' : 'text-gray-600'}`}>
-                      {priceDifference === 0
-                        ? 'This rate matches the saved average.'
-                        : `${Math.abs(priceDifference).toLocaleString()} KES ${priceDifference > 0 ? 'above' : 'below'} the saved average.`}
-                    </p>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                    {logType === 'material' ? 'Item Name / Description' : logType === 'labor' ? 'Fundi / Contractor Name' : 'Expense Description'}
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={logType === 'material' ? 'e.g., Bags of Bamburi Cement' : logType === 'labor' ? 'e.g., John (Mason)' : 'e.g., Permit fee or transport'}
+                    value={itemName}
+                    onChange={(e) => setItemName(e.target.value)}
+                    list={logType === 'material' ? 'market-materials' : undefined}
+                    className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2.5 text-sm text-white transition-colors placeholder:text-zinc-600 focus:border-orange-500 focus:outline-none"
+                  />
+                  {logType === 'material' && (
+                    <datalist id="market-materials">
+                      {marketPrices.map((item) => (
+                        <option key={item.id} value={item.materialName} />
+                      ))}
+                    </datalist>
                   )}
                 </div>
-              )}
 
-              <button type="submit" className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold p-3 rounded-xl transition-all shadow-md shadow-orange-200 mt-2">
-                Save to Digital Ledger
-              </button>
-            </form>
-          </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                      {logType === 'material' ? 'Quantity' : logType === 'labor' ? 'Days Worked' : 'Units'}
+                    </label>
+                    <input
+                      type="number"
+                      placeholder="0"
+                      value={quantity}
+                      onChange={(e) => setQuantity(e.target.value)}
+                      className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2.5 text-right font-mono text-sm text-white transition-colors placeholder:text-zinc-600 focus:border-orange-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                      {logType === 'material' ? 'Unit Price (KES)' : logType === 'labor' ? 'Daily Rate (KES)' : 'Amount per Unit (KES)'}
+                    </label>
+                    <input
+                      type="number"
+                      placeholder="0"
+                      value={price}
+                      onChange={(e) => setPrice(e.target.value)}
+                      className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2.5 text-right font-mono text-sm text-white transition-colors placeholder:text-zinc-600 focus:border-orange-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
 
-          {/* Real-time Ledger Stream Column */}
-          <div className="lg:col-span-2 bg-gray-50 p-6 rounded-2xl border border-gray-200 shadow-sm">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-gray-200 pb-4 mb-4">
-              <h2 className="text-lg font-bold text-black">Live Site Ledger</h2>
-              <div className="w-full md:w-80">
-                <label className="sr-only" htmlFor="ledger-search">Search previous entries</label>
-                <input
-                  id="ledger-search"
-                  type="search"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Search entries..."
-                  className="w-full bg-white border border-gray-300 rounded-xl p-3 text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-600"
-                />
+                {logType === 'material' && selectedMarketPrice && (
+                  <div className="border border-orange-500/20 bg-orange-500/10 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-orange-400">Market Average</p>
+                    <p className="mt-1 font-mono text-sm font-semibold text-white">
+                      KES {Number(selectedMarketPrice.averagePrice || 0).toLocaleString()} per {selectedMarketPrice.unit}
+                    </p>
+                    {price && (
+                      <p className={`mt-1 text-xs font-semibold ${priceDifference > 0 ? 'text-orange-400' : priceDifference < 0 ? 'text-zinc-300' : 'text-zinc-500'}`}>
+                        {priceDifference === 0
+                          ? 'This rate matches the saved average.'
+                          : `${Math.abs(priceDifference).toLocaleString()} KES ${priceDifference > 0 ? 'above' : 'below'} the saved average.`}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                <button type="submit" className="w-full rounded-md bg-orange-600 py-2.5 text-sm font-bold text-black transition-colors hover:bg-orange-500">
+                  Save to Digital Ledger
+                </button>
+              </form>
+            </section>
+
+            <section className="border border-zinc-800 bg-zinc-900/30 p-5">
+              <div className="border-b border-zinc-800 pb-4">
+                <h2 className="text-lg font-bold tracking-tight text-white">Average Market Prices</h2>
+                <p className="mt-1 text-sm font-medium text-zinc-500">Reference rates for common site materials.</p>
               </div>
-            </div>
-            
-            {logs.length === 0 ? (
-              <p className="text-gray-500 text-center py-12 font-medium">No expenses logged yet for this project.</p>
-            ) : filteredLogs.length === 0 ? (
-              <p className="text-gray-500 text-center py-12 font-medium">No entries match your search.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
+
+              <form onSubmit={handleMarketPriceSubmit} className="mt-5 grid grid-cols-1 gap-3">
+                <input
+                  type="text"
+                  value={marketMaterialName}
+                  onChange={(e) => setMarketMaterialName(e.target.value)}
+                  placeholder="Material"
+                  className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2.5 text-sm text-white transition-colors placeholder:text-zinc-600 focus:border-orange-500 focus:outline-none"
+                />
+                <div className="grid grid-cols-2 gap-3">
+                  <input
+                    type="text"
+                    value={marketUnit}
+                    onChange={(e) => setMarketUnit(e.target.value)}
+                    placeholder="Unit"
+                    className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2.5 text-sm text-white transition-colors placeholder:text-zinc-600 focus:border-orange-500 focus:outline-none"
+                  />
+                  <input
+                    type="number"
+                    min="1"
+                    value={marketAveragePrice}
+                    onChange={(e) => setMarketAveragePrice(e.target.value)}
+                    placeholder="Avg KES"
+                    className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2.5 text-right font-mono text-sm text-white transition-colors placeholder:text-zinc-600 focus:border-orange-500 focus:outline-none"
+                  />
+                </div>
+                <input
+                  type="text"
+                  value={marketSource}
+                  onChange={(e) => setMarketSource(e.target.value)}
+                  placeholder="Source"
+                  className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2.5 text-sm text-white transition-colors placeholder:text-zinc-600 focus:border-orange-500 focus:outline-none"
+                />
+                <button
+                  type="submit"
+                  className="w-full rounded-md border border-zinc-700 bg-zinc-950 py-2.5 text-sm font-bold text-white transition-colors hover:border-orange-500 hover:text-orange-400"
+                >
+                  Save Price
+                </button>
+                {marketError && <p className="text-sm font-semibold text-orange-400">{marketError}</p>}
+              </form>
+
+              <div className="mt-5 overflow-x-auto">
+                <table className="w-full border-collapse text-left">
                   <thead>
-                    <tr className="border-b border-gray-300 text-xs font-bold uppercase tracking-wider text-gray-700">
-                      <th className="pb-3">Type</th>
-                      <th className="pb-3">Description / Name</th>
-                      <th className="pb-3 text-right">Qty / Days</th>
-                      <th className="pb-3 text-right">Rate</th>
-                      <th className="pb-3 text-right">Total Cost</th>
+                    <tr className="border-b border-zinc-800 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                      <th className="pb-2">Material</th>
+                      <th className="pb-2">Unit</th>
+                      <th className="pb-2 text-right">Average</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200 text-sm font-medium">
-                    {filteredLogs.map((log) => (
-                      <tr key={log.id} className="hover:bg-white transition-all">
-                        <td className="py-4">
-                          <span className={`px-2 py-1 rounded-md text-xs font-bold ${log.type === 'material' ? 'bg-orange-100 text-orange-700 border border-orange-300' : log.type === 'labor' ? 'bg-black text-white border border-black' : 'bg-white text-black border border-gray-400'}`}>
-                            {log.type}
-                          </span>
+                  <tbody className="divide-y divide-zinc-900 text-sm">
+                    {marketPrices.map((item) => (
+                      <tr key={item.id} className="transition-colors hover:bg-zinc-900/50">
+                        <td className="py-3 font-semibold text-white">
+                          {item.materialName}
+                          <p className="mt-0.5 text-xs font-medium text-zinc-600">{item.source || 'Manual market check'}</p>
                         </td>
-                        <td className="py-4 text-black font-semibold">{log.itemName}</td>
-                        <td className="py-4 text-right text-gray-700">{log.quantity}</td>
-                        <td className="py-4 text-right text-gray-700">KES {log.price.toLocaleString()}</td>
-                        <td className="py-4 text-right text-black font-bold">KES {log.total.toLocaleString()}</td>
+                        <td className="py-3 text-zinc-400">{item.unit}</td>
+                        <td className="py-3 text-right font-mono font-semibold text-white">
+                          KES {Number(item.averagePrice || 0).toLocaleString()}
+                          {!item.isDefault && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteMarketPrice(item.id)}
+                              className="ml-3 text-xs font-semibold text-orange-400 transition-colors hover:text-orange-300"
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            )}
-          </div>
-        </div>
+            </section>
+          </aside>
 
-        <section className="mt-8 bg-gray-50 p-6 rounded-2xl border border-gray-200 shadow-sm">
-          <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6 border-b border-gray-200 pb-5 mb-6">
-            <div>
-              <h2 className="text-lg font-bold text-black">Average Market Prices</h2>
-              <p className="text-sm font-medium text-gray-500 mt-1">Keep a reference list for common materials before logging purchases.</p>
-            </div>
+          <main className="space-y-6 lg:col-span-2">
+            <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div className="border border-orange-500/30 bg-zinc-900/40 p-5 ring-1 ring-orange-500/10 md:col-span-3 xl:col-span-1">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Remaining Balance</h3>
+                <p className="mt-2 font-mono text-3xl font-bold tracking-tight text-white">KES {(projectBudget - totalSpent).toLocaleString()}</p>
+              </div>
+              <div className="border border-zinc-800 bg-zinc-900/20 p-5">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Total Project Budget</h3>
+                <p className="mt-2 font-mono text-xl font-bold text-white">KES {projectBudget.toLocaleString()}</p>
+              </div>
+              <div className="border border-zinc-800 bg-zinc-900/20 p-5">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Total Funds Spent</h3>
+                <p className="mt-2 font-mono text-xl font-bold text-orange-500">KES {totalSpent.toLocaleString()}</p>
+              </div>
+            </section>
 
-            <form onSubmit={handleMarketPriceSubmit} className="w-full lg:max-w-3xl grid grid-cols-1 md:grid-cols-5 gap-3">
-              <input
-                type="text"
-                value={marketMaterialName}
-                onChange={(e) => setMarketMaterialName(e.target.value)}
-                placeholder="Material"
-                className="md:col-span-1 w-full bg-white border border-gray-300 rounded-xl p-3 text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-600"
-              />
-              <input
-                type="text"
-                value={marketUnit}
-                onChange={(e) => setMarketUnit(e.target.value)}
-                placeholder="Unit"
-                className="md:col-span-1 w-full bg-white border border-gray-300 rounded-xl p-3 text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-600"
-              />
-              <input
-                type="number"
-                min="1"
-                value={marketAveragePrice}
-                onChange={(e) => setMarketAveragePrice(e.target.value)}
-                placeholder="Avg KES"
-                className="md:col-span-1 w-full bg-white border border-gray-300 rounded-xl p-3 text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-600"
-              />
-              <input
-                type="text"
-                value={marketSource}
-                onChange={(e) => setMarketSource(e.target.value)}
-                placeholder="Source"
-                className="md:col-span-1 w-full bg-white border border-gray-300 rounded-xl p-3 text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-600"
-              />
-              <button
-                type="submit"
-                className="w-full bg-black hover:bg-orange-700 text-white font-bold p-3 rounded-xl transition-all"
-              >
-                Save Price
-              </button>
-              {marketError && <p className="md:col-span-5 text-sm font-semibold text-red-600">{marketError}</p>}
-            </form>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-gray-300 text-xs font-bold uppercase tracking-wider text-gray-700">
-                  <th className="pb-3">Material</th>
-                  <th className="pb-3">Unit</th>
-                  <th className="pb-3 text-right">Average Price</th>
-                  <th className="pb-3">Source</th>
-                  <th className="pb-3 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 text-sm font-medium">
-                {marketPrices.map((item) => (
-                  <tr key={item.id} className="hover:bg-white transition-all">
-                    <td className="py-4 text-black font-semibold">{item.materialName}</td>
-                    <td className="py-4 text-gray-700">{item.unit}</td>
-                    <td className="py-4 text-right text-black font-bold">KES {Number(item.averagePrice || 0).toLocaleString()}</td>
-                    <td className="py-4 text-gray-700">{item.source || 'Manual market check'}</td>
-                    <td className="py-4 text-right">
-                      {item.isDefault ? (
-                        <span className="text-xs font-bold text-gray-500">Starter</span>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteMarketPrice(item.id)}
-                          className="text-xs font-bold text-red-600 hover:text-red-800"
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <section className="mt-8 bg-gray-50 p-6 rounded-2xl border border-gray-200 shadow-sm">
-          <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 border-b border-gray-200 pb-5 mb-6">
-            <div>
-              <h2 className="text-lg font-bold text-black">Progress Photo Bay</h2>
-              <p className="text-sm font-medium text-gray-500 mt-1">Upload site progress images for this project.</p>
-            </div>
-
-            <form onSubmit={handlePhotoUpload} className="w-full md:max-w-md space-y-3">
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) => setPhotoFile(e.target.files?.[0] || null)}
-                className="w-full bg-white border border-gray-300 rounded-xl p-3 text-black file:mr-4 file:rounded-lg file:border-0 file:bg-black file:px-4 file:py-2 file:font-bold file:text-white hover:file:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-600"
-              />
-              <input
-                type="text"
-                value={photoCaption}
-                onChange={(e) => setPhotoCaption(e.target.value)}
-                placeholder="Caption, phase, or site note"
-                className="w-full bg-white border border-gray-300 rounded-xl p-3 text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-600"
-              />
-              {photoError && <p className="text-sm font-semibold text-red-600">{photoError}</p>}
-              <button
-                type="submit"
-                disabled={uploadingPhoto}
-                className="w-full bg-orange-600 hover:bg-orange-700 disabled:bg-gray-400 text-white font-bold p-3 rounded-xl transition-all shadow-md shadow-orange-200"
-              >
-                {uploadingPhoto ? 'Uploading Photo...' : 'Add Progress Photo'}
-              </button>
-            </form>
-          </div>
-
-          {photos.length === 0 ? (
-            <p className="text-gray-500 text-center py-10 font-medium">No progress photos uploaded yet.</p>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-              {photos.map((photo) => (
-                <article key={photo.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-                  <img
-                    src={photo.imageUrl}
-                    alt={photo.caption || 'Build progress'}
-                    className="w-full aspect-video object-cover bg-gray-200"
+            <section className="border border-zinc-800 bg-zinc-900/30 p-5">
+              <div className="flex flex-col gap-4 border-b border-zinc-800 pb-4 md:flex-row md:items-center md:justify-between">
+                <h2 className="text-lg font-bold tracking-tight text-white">Live Site Ledger</h2>
+                <div className="w-full md:w-80">
+                  <label className="sr-only" htmlFor="ledger-search">Search previous entries</label>
+                  <input
+                    id="ledger-search"
+                    type="search"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder="Search entries..."
+                    className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2.5 text-sm text-white transition-colors placeholder:text-zinc-600 focus:border-orange-500 focus:outline-none"
                   />
-                  <div className="p-4">
-                    <p className="text-sm font-bold text-black">{photo.caption || 'Progress update'}</p>
-                    <p className="text-xs font-medium text-gray-500 mt-1">
-                      {photo.createdAt ? new Date(photo.createdAt).toLocaleDateString() : 'Recently added'}
-                    </p>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
+                </div>
+              </div>
 
+              {logs.length === 0 ? (
+                <p className="py-12 text-center font-medium text-zinc-500">No expenses logged yet for this project.</p>
+              ) : filteredLogs.length === 0 ? (
+                <p className="py-12 text-center font-medium text-zinc-500">No entries match your search.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[720px] border-collapse text-left">
+                    <thead>
+                      <tr className="border-b border-zinc-800 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                        <th className="pb-2 pt-4">Type</th>
+                        <th className="pb-2 pt-4">Description / Name</th>
+                        <th className="pb-2 pt-4 text-right">Qty / Days</th>
+                        <th className="pb-2 pt-4 text-right">Rate</th>
+                        <th className="pb-2 pt-4 text-right">Total Cost</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-900 text-sm">
+                      {filteredLogs.map((log) => (
+                        <tr key={log.id} className="transition-colors hover:bg-zinc-900/50">
+                          <td className="py-4">
+                            <span className={`rounded border px-2 py-0.5 font-mono text-[10px] font-medium uppercase ${log.type === 'material' ? 'border-orange-500/20 bg-orange-500/10 text-orange-400' : log.type === 'labor' ? 'border-zinc-700 bg-zinc-950 text-zinc-300' : 'border-zinc-800 bg-zinc-900 text-zinc-400'}`}>
+                              {log.type}
+                            </span>
+                          </td>
+                          <td className="py-4 font-semibold text-white">{log.itemName}</td>
+                          <td className="py-4 text-right font-mono text-zinc-400">{log.quantity}</td>
+                          <td className="py-4 text-right font-mono text-zinc-400">KES {log.price.toLocaleString()}</td>
+                          <td className="py-4 text-right font-mono font-bold text-white">KES {log.total.toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+
+            <section className="border border-zinc-800 bg-zinc-900/30 p-5">
+              <div className="flex flex-col gap-5 border-b border-zinc-800 pb-5 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <h2 className="text-lg font-bold tracking-tight text-white">Progress Photo Bay</h2>
+                  <p className="mt-1 text-sm font-medium text-zinc-500">Upload site progress images for this project.</p>
+                </div>
+
+                <form onSubmit={handlePhotoUpload} className="w-full space-y-3 md:max-w-md">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => setPhotoFile(e.target.files?.[0] || null)}
+                    className="w-full rounded-md border border-zinc-800 bg-zinc-950 p-2.5 text-sm text-zinc-400 transition-colors file:mr-4 file:rounded-md file:border file:border-zinc-700 file:bg-zinc-900 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white hover:file:border-orange-500 focus:border-orange-500 focus:outline-none"
+                  />
+                  <input
+                    type="text"
+                    value={photoCaption}
+                    onChange={(e) => setPhotoCaption(e.target.value)}
+                    placeholder="Caption, phase, or site note"
+                    className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2.5 text-sm text-white transition-colors placeholder:text-zinc-600 focus:border-orange-500 focus:outline-none"
+                  />
+                  {photoError && <p className="text-sm font-semibold text-orange-400">{photoError}</p>}
+                  <button
+                    type="submit"
+                    disabled={uploadingPhoto}
+                    className="w-full rounded-md bg-orange-600 py-2.5 text-sm font-bold text-black transition-colors hover:bg-orange-500 disabled:bg-zinc-700 disabled:text-zinc-400"
+                  >
+                    {uploadingPhoto
+                      ? `Uploading Photo${photoUploadProgress !== null ? ` ${photoUploadProgress}%` : '...'}`
+                      : 'Add Progress Photo'}
+                  </button>
+                </form>
+              </div>
+
+              {photos.length === 0 ? (
+                <p className="py-10 text-center font-medium text-zinc-500">No progress photos uploaded yet.</p>
+              ) : (
+                <div className="grid grid-cols-1 gap-4 pt-5 sm:grid-cols-2 xl:grid-cols-3">
+                  {photos.map((photo) => (
+                    <article key={photo.id} className="overflow-hidden rounded-md border border-zinc-800 bg-zinc-950">
+                      <img
+                        src={photo.imageUrl}
+                        alt={photo.caption || 'Build progress'}
+                        className="aspect-video w-full bg-zinc-900 object-cover"
+                      />
+                      <div className="p-3">
+                        <p className="text-sm font-bold text-white">{photo.caption || 'Progress update'}</p>
+                        <p className="mt-1 font-mono text-xs font-medium text-zinc-500">
+                          {photo.createdAt ? new Date(photo.createdAt).toLocaleDateString() : 'Recently added'}
+                        </p>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+          </main>
+        </div>
       </div>
     </div>
   );
