@@ -30,6 +30,22 @@ const mergeMarketPrices = (savedPrices) => {
   return Array.from(priceMap.values()).sort((a, b) => a.materialName.localeCompare(b.materialName));
 };
 
+const getPhotoUploadError = (error) => {
+  if (error?.code === 'storage/unauthorized') {
+    return 'You do not have permission to upload images for this project.';
+  }
+
+  if (error?.code === 'storage/quota-exceeded') {
+    return 'Storage quota has been exceeded. Please try again later.';
+  }
+
+  if (error?.code === 'storage/retry-limit-exceeded') {
+    return 'The upload timed out. Please check your connection and try again.';
+  }
+
+  return 'Could not upload the image. Please try again.';
+};
+
 const Dashboard = () => {
   const { user, logout } = useAuth();
   const { projectId } = useParams();
@@ -180,6 +196,11 @@ const Dashboard = () => {
       return;
     }
 
+    if (!photoFile.type?.startsWith('image/')) {
+      setPhotoError('Please choose a valid image file.');
+      return;
+    }
+
     setUploadingPhoto(true);
 
     try {
@@ -187,7 +208,9 @@ const Dashboard = () => {
       const photoPath = `progress_photos/${projectId}/${Date.now()}-${safeFileName}`;
       const photoRef = ref(storage, photoPath);
 
-      await uploadBytes(photoRef, photoFile);
+      await uploadBytes(photoRef, photoFile, {
+        contentType: photoFile.type
+      });
       const imageUrl = await getDownloadURL(photoRef);
 
       await addDoc(collection(db, 'mjengo_progress_photos'), {
@@ -206,7 +229,7 @@ const Dashboard = () => {
       e.target.reset();
     } catch (error) {
       console.error('Error uploading progress photo: ', error);
-      setPhotoError('Could not upload the image. Please try again.');
+      setPhotoError(getPhotoUploadError(error));
     } finally {
       setUploadingPhoto(false);
     }

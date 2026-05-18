@@ -256,6 +256,9 @@ describe('Dashboard', () => {
 
     await waitFor(() => {
       expect(mockUploadBytes).toHaveBeenCalled();
+      expect(mockUploadBytes.mock.calls[0][2]).toEqual({
+        contentType: 'image/jpeg'
+      });
       expect(mockAddDoc).toHaveBeenCalled();
       expect(mockAddDoc.mock.calls[0][1]).toEqual(expect.objectContaining({
         userId: 'user-1',
@@ -266,5 +269,22 @@ describe('Dashboard', () => {
         fileName: 'site photo.jpg'
       }));
     });
+  });
+
+  test('rejects non-image progress photo uploads', async () => {
+    const { container } = render(<Dashboard />);
+
+    expect(await screen.findByText(/Kilimani Build/i)).toBeInTheDocument();
+
+    const file = new File(['not-image-data'], 'notes.txt', { type: 'text/plain' });
+    fireEvent.change(container.querySelector('input[type="file"]'), {
+      target: { files: [file] }
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Add Progress Photo/i }));
+
+    expect(screen.getByText(/Please choose a valid image file/i)).toBeInTheDocument();
+    expect(mockUploadBytes).not.toHaveBeenCalled();
+    expect(mockAddDoc).not.toHaveBeenCalled();
   });
 });
