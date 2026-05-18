@@ -27,10 +27,10 @@ const Login = () => {
         <div className="flex justify-center">
           {/* Simple clean construction grid icon using plain CSS shapes */}
           <div className="grid grid-cols-2 gap-1 w-6 h-6">
-            <div className="border-2 border-orange-600 rounded-sm"></div>
-            <div className="border-2 border-orange-600 rounded-sm"></div>
-            <div className="border-2 border-orange-600 rounded-sm"></div>
-            <div className="border-2 border-orange-600 rounded-sm"></div>
+            <div className=""></div>
+            <div className=""></div>
+            <div className=""></div>
+            <div className=""></div>
           </div>
         </div>
 
