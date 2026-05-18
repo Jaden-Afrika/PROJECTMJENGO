@@ -1,6 +1,6 @@
 {
   "hosting": {
-    "public": "build",
+    "public": "project-mjengo/build",
     "ignore": [
       "firebase.json",
       "**/.*",
