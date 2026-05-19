@@ -4,7 +4,6 @@ import { AuthProvider, useAuth } from './AuthContext';
 import ProjectSelection from './projectselection';
 import Dashboard from './Dashboard';
 
-// --- Placeholder Components (We will build these next) ---
 const Login = () => {
   const { login, user } = useAuth();
   if (user) return <Navigate to="/projects" />;
@@ -16,16 +15,13 @@ const Login = () => {
         backgroundImage: `url('https://images.unsplash.com/photo-1541888946425-d81bb19240f5?auto=format&fit=crop&w=1920&q=80')` 
       }}
     >
-      {/* Dark overlay to make text pop */}
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
 
-      {/* Login Card Container */}
       <div className="bg-white/95 p-8 rounded-3xl shadow-2xl max-w-md w-full mx-4 text-center relative z-10 border border-white/20">
         <div className="flex justify-center">
           <img src="/PROJECTMJENGO.png" alt="Project Mjengo logo" className="mb-4 h-12 w-auto" />
         </div>
         <div className="flex justify-center">
-          {/* Simple clean construction grid icon using plain CSS shapes */}
           <div className="grid grid-cols-2 gap-1 w-6 h-6">
             <div className=""></div>
             <div className=""></div>
@@ -45,11 +41,10 @@ const Login = () => {
           onClick={login}
           className="w-full bg-orange-600 hover:bg-orange-700 text-white px-6 py-3.5 rounded-xl font-bold transition-all shadow-lg flex items-center justify-center gap-3 border border-orange-700"
         >
-          {/* Simple flat multi-color Google 'G' icon placeholder using CSS background text */}
           <span className="font-black text-lg bg-gradient-to-r from-red-500 via-green-500 to-blue-500 bg-clip-text text-transparent">G</span>
           Sign in with Google Account
         </button>
-        
+
         <p className="mt-6 text-xs text-gray-500 font-medium">
           Secure cloud authorization • Zero local footprint
         </p>
@@ -105,7 +100,6 @@ const Footer = () => (
 );
 
 
-// --- Protected Route Wrapper ---
 const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();
   
@@ -115,7 +109,6 @@ const ProtectedRoute = ({ children }) => {
   return children;
 };
 
-// --- Main App Component ---
 function App() {
   return (
     <AuthProvider>
@@ -144,7 +137,6 @@ function App() {
                   </ProtectedRoute>
                 } 
               />
-              {/* Redirect any unknown routes to login */}
               <Route path="*" element={<Navigate to="/" />} />
             </Routes>
           </main>

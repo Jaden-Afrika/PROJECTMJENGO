@@ -43,8 +43,6 @@ beforeEach(() => {
 describe('ProjectSelection Component Layout', () => {
   test('renders the workspace selection titles properly', () => {
     render(<ProjectSelection onSelectProject={jest.fn()} />);
-    
-    // Checks if the main headers are visible on screen
     expect(screen.getByText(/Project Mjengo/i)).toBeInTheDocument();
     expect(screen.getByText(/Create New Project/i)).toBeInTheDocument();
     expect(screen.getByText(/Ongoing Projects/i)).toBeInTheDocument();

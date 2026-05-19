@@ -1,4 +1,4 @@
-jest.mock('react-router-dom'); // use manual mock in src/__mocks__/react-router-dom.js
+jest.mock('react-router-dom');
 jest.mock('./AuthContext', () => ({
   AuthProvider: ({ children }) => children,
   useAuth: () => ({

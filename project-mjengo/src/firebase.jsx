@@ -14,10 +14,8 @@ const firebaseConfig = {
   measurementId: "G-4PKCBDHN83"
 };
 
-// Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
-// Export instances to use in AuthContext and Dashboard
 export const auth = getAuth(app);
 export const provider = new GoogleAuthProvider();
 export const db = getFirestore(app);

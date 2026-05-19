@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { auth, provider } from './firebase'; // Import both auth and provider from local config
+import { auth, provider } from './firebase';
 import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
 
 const AuthContext = createContext();
@@ -15,7 +15,6 @@ export const AuthProvider = ({ children }) => {
     });
   }, []);
 
-  // Pass 'provider' (GoogleAuthProvider instance from firebase.js) straight into the popup
   const login = () => signInWithPopup(auth, provider);
   const logout = () => signOut(auth);
 

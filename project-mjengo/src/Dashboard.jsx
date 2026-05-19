@@ -91,7 +91,6 @@ const Dashboard = () => {
   const { user, logout } = useAuth();
   const { projectId } = useParams();
   
-  // Form States
   const [itemName, setItemName] = useState('');
   const [quantity, setQuantity] = useState('');
   const [price, setPrice] = useState('');
@@ -108,7 +107,6 @@ const Dashboard = () => {
   const [marketSource, setMarketSource] = useState('');
   const [marketError, setMarketError] = useState('');
 
-  // Data State
   const [logs, setLogs] = useState([]);
   const [photos, setPhotos] = useState([]);
   const [marketPrices, setMarketPrices] = useState(defaultMarketPrices);
@@ -153,13 +151,11 @@ const Dashboard = () => {
     };
   }, [projectId, user?.uid]);
 
-  // 1. REAL-TIME DATA PERSISTENCE (No LocalStorage)
   useEffect(() => {
     if (!projectId) return undefined;
 
     const q = query(collection(db, 'mjengo_logs'), where('projectId', '==', projectId));
     
-    // onSnapshot streams live data straight from Firestore memory
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const logsData = snapshot.docs.map((logDoc) => ({ id: logDoc.id, ...logDoc.data() }));
       logsData.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
@@ -196,7 +192,6 @@ const Dashboard = () => {
     return () => unsubscribe();
   }, [user?.uid]);
 
-  // 2. LOG EXPENSE SUBMISSION
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!projectId || !project) return alert('Project is still loading. Please try again.');
@@ -215,7 +210,6 @@ const Dashboard = () => {
         createdAt: new Date().toISOString()
       });
 
-      // Clear Form Fields
       setItemName('');
       setQuantity('');
       setPrice('');
@@ -326,7 +320,6 @@ const Dashboard = () => {
     }
   };
 
-  // 3. CALCULATE TOTAL SPENT ON THE FLY
   const totalSpent = logs.reduce((sum, item) => sum + Number(item.total || 0), 0);
   const projectBudget = Number(project?.budget || 0);
   const selectedMarketPrice = marketPrices.find((item) => normalizeMaterialName(item.materialName) === normalizeMaterialName(itemName));
